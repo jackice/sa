@@ -21,6 +21,12 @@ fn main() -> anyhow::Result<()> {
     // 1. 计算内存分配
     let direct_mem_gb = (args.total_ram * 0.08).max(1.0);
     let heap_mem_gb = (args.total_ram * 0.35).max(4.0);
+    log::debug!(
+        "内存分配计算: 总内存={}GB, 直接内存={:.1}GB, 堆内存={:.1}GB",
+        args.total_ram,
+        direct_mem_gb,
+        heap_mem_gb
+    );
 
     // 2. 动态计算元空间大小
     let metaspace_size_mb = calculate_metaspace(&args);

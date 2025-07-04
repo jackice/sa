@@ -39,8 +39,8 @@ pub struct Args {
     #[clap(short = 'n', long, default_value = "1000")]
     pub expected_connections: usize,
 
-    /// 最大突发流量倍数
-    #[clap(short = 'b', long, default_value = "3")]
+    /// 最大突发流量倍数 [必须大于1]
+    #[clap(short = 'b', long, default_value = "3", value_parser = validate_burst_factor)]
     pub burst_factor: f64,
 
     /// 是否启用内存防护 [true, false]
@@ -60,9 +60,20 @@ fn validate_positive_float(s: &str) -> Result<f64, String> {
     }
 }
 
+fn validate_burst_factor(s: &str) -> Result<f64, String> {
+    let val: f64 = s.parse().map_err(|_| format!("`{s}` 不是有效的浮点数"))?;
+    if val > 1.0 {
+        Ok(val)
+    } else {
+        Err(format!("突发流量倍数必须大于1, 但得到 {val}"))
+    }
+}
+
 fn validate_disk_type(s: &str) -> Result<String, String> {
     match s {
         "sata_hdd" | "sata_ssd" | "nvme" => Ok(s.to_string()),
-        _ => Err(format!("不支持的磁盘类型: {s}. 可用选项: sata_hdd, sata_ssd, nvme")),
+        _ => Err(format!(
+            "不支持的磁盘类型: {s}. 可用选项: sata_hdd, sata_ssd, nvme"
+        )),
     }
 }

@@ -1,6 +1,6 @@
-use colored::Colorize;
 use crate::analysis::SafetyAnalysis;
 use crate::utils::Repeated;
+use colored::Colorize;
 
 pub fn print_scenarios(safety: &SafetyAnalysis) {
     println!(
