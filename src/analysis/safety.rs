@@ -1,6 +1,14 @@
-use colored::Colorize;
 use crate::args::Args;
+use colored::Colorize;
 
+/// 安全性分析结果
+///
+/// # 字段说明
+/// - `heap_safety`: 堆内存安全系数 (0-1), 1表示完全安全
+/// - `direct_mem_safety`: 直接内存安全系数 (0-1)
+/// - `risk_level`: 整体风险等级描述
+/// - `scenarios`: 模拟的不同负载场景
+/// - `recommendations`: 优化建议列表
 pub struct SafetyAnalysis {
     pub heap_safety: f64,             // 堆内存安全系数 (0-1)
     pub direct_mem_safety: f64,       // 直接内存安全系数 (0-1)
@@ -156,5 +164,24 @@ fn status_label(heap_usage: f64, heap_max: f64, direct_usage: f64, direct_max: f
         "⚠️ 警告".yellow().to_string()
     } else {
         "🔥 危险".red().to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::args::Args;
+
+    #[test]
+    fn test_calculate_safety() {
+        let args = Args {
+            expected_connections: 1000,
+            burst_factor: 3.0,
+            avg_file_size: 10.0,
+            ..Default::default()
+        };
+        let safety = calculate_safety(&args, 2.0, 8.0);
+        assert!(safety.heap_safety > 0.0);
+        assert!(safety.direct_mem_safety > 0.0);
     }
 }

@@ -1,30 +1,22 @@
+use anyhow::Context;
 use clap::Parser;
 use sa::Args;
 use sa::analysis::{calculate_metaspace, calculate_safety};
+use sa::config;
 use sa::utils::{print_configuration, print_safety_report};
-use std::collections::HashMap;
 
-fn main() {
+fn main() -> anyhow::Result<()> {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    log::info!("启动文件传输系统分析工具");
     let args = Args::parse();
 
-    // 磁盘速度映射
-    let disk_speeds: HashMap<&str, (f64, f64)> = [
-        ("sata_hdd", (120.0, 100.0)),
-        ("sata_ssd", (300.0, 250.0)),
-        ("nvme", (1500.0, 1200.0)),
-    ]
-    .iter()
-    .cloned()
-    .collect();
-
-    // 验证磁盘类型
-    if !disk_speeds.contains_key::<str>(args.disk_type.as_str()) {
-        eprintln!("错误: 不支持的磁盘类型. 可用选项: sata_hdd, sata_ssd, nvme");
-        std::process::exit(1);
-    }
-
-    // 获取磁盘速度
-    let (disk_read_speed, disk_write_speed) = disk_speeds[args.disk_type.as_str()];
+    // 获取磁盘配置
+    let configs = config::get_disk_configs().read().unwrap();
+    let disk_config = configs
+        .get(args.disk_type.as_str())
+        .context("无效的磁盘类型")?;
+    let disk_read_speed = disk_config.read_speed;
+    let disk_write_speed = disk_config.write_speed;
 
     // 1. 计算内存分配
     let direct_mem_gb = (args.total_ram * 0.08).max(1.0);
@@ -60,4 +52,6 @@ fn main() {
         metaspace_size_mb,
         &safety,
     );
+
+    Ok(())
 }
