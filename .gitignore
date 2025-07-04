@@ -1,0 +1,35 @@
+# Rust build artifacts
+/target
+**/*.rs.bk
+
+# IDE specific files
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Debug files
+*.log
+*.swp
+*.swo
+
+# Local development files
+.env
+*.local
+
+# Backup files
+*~
+*.bak
+
+# Aider related files
+.aider*
+.aider/
+aider.conf.json
+aider*.md
