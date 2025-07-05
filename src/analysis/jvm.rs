@@ -16,6 +16,43 @@ pub fn print_jvm_recommendations(
     );
     println!("{}", "▬".green().bold().repeated(50));
 
+    // JDK版本兼容性评估
+    println!("\n{}", "  # JDK版本兼容性".bold());
+    if args.complexity == "high" {
+        println!("  - 建议使用JDK 17+ (包含ZGC和元空间优化)");
+    } else {
+        println!("  - 最低要求: JDK 11");
+        println!("  - 推荐版本: JDK 17+ (更好的性能与内存管理)");
+    }
+    
+    println!("\n{}", "  ## 参数兼容性详情".bold());
+    println!("  - 基础配置:");
+    println!("    - -Xms/-Xmx: 所有版本支持");
+    println!("    - -XX:MaxDirectMemorySize: JDK 6+ 支持");
+    println!("    - -XX:MaxMetaspaceSize: JDK 8+ 支持 (JDK 7及以下使用-XX:MaxPermSize)");
+    println!("    - -XX:ReservedCodeCacheSize: JDK 6+ 支持");
+    
+    println!("  - 内存防护增强:");
+    println!("    - -XX:+UseG1GC: JDK 7u4+ 完全支持");
+    println!("    - -XX:MaxGCPauseMillis: JDK 6u14+ 支持");
+    println!("    - -XX:ParallelGCThreads/-XX:ConcGCThreads: JDK 6+ 支持");
+    println!("    - -Djdk.nio.maxCachedBufferSize: JDK 7+ 支持");
+    
+    println!("  - 元空间优化:");
+    println!("    - -XX:+UseCompressedClassPointers: JDK 6+ 支持64位系统");
+    println!("    - -XX:CompressedClassSpaceSize: JDK 8+ 支持");
+    println!("    - -XX:+UnlockExperimentalVMOptions: JDK 7+ 支持");
+    println!("    - -XX:+UseZGC: JDK 11+ 支持 (JDK 15+ 生产可用)");
+    
+    println!("  - 监控配置:");
+    println!("    - -XX:NativeMemoryTracking: JDK 8+ 支持");
+    println!("    - -XX:+PrintGCDetails: JDK 6+ 支持 (JDK 9+ 使用-Xlog:gc*)");
+    println!("    - -XX:+HeapDumpOnOutOfMemoryError: JDK 6+ 支持");
+    
+    println!("  - 大文件优化:");
+    println!("    - -Djdk.nio.enableFastFileTransfer: JDK 9+ 支持");
+    println!("    - DirectIO相关参数: 需要特定JDK实现或第三方库");
+
     // 基础配置
     println!("{}", "  # 基础配置".bold());
     println!("  -Xms{}g -Xmx{}g", heap_mem_gb as i32, heap_mem_gb as i32);

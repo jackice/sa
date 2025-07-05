@@ -109,7 +109,45 @@ pub fn generate_markdown_report(ctx: &ReportContext) -> anyhow::Result<()> {
     // 6. JVM配置建议
     writeln!(file, "## JVM配置建议")?;
     writeln!(file, "```")?;
-    writeln!(file, "# 基础配置")?;
+    
+    // JDK版本兼容性评估
+    writeln!(file, "# JDK版本兼容性")?;
+    if ctx.args.complexity == "high" {
+        writeln!(file, "- 建议使用JDK 17+ (包含ZGC和元空间优化)")?;
+    } else {
+        writeln!(file, "- 最低要求: JDK 11")?;
+        writeln!(file, "- 推荐版本: JDK 17+ (更好的性能与内存管理)")?;
+    }
+    
+    writeln!(file, "\n## 参数兼容性详情")?;
+    writeln!(file, "- 基础配置:")?;
+    writeln!(file, "  - -Xms/-Xmx: 所有版本支持")?;
+    writeln!(file, "  - -XX:MaxDirectMemorySize: JDK 6+ 支持")?;
+    writeln!(file, "  - -XX:MaxMetaspaceSize: JDK 8+ 支持 (JDK 7及以下使用-XX:MaxPermSize)")?;
+    writeln!(file, "  - -XX:ReservedCodeCacheSize: JDK 6+ 支持")?;
+    
+    writeln!(file, "- 内存防护增强:")?;
+    writeln!(file, "  - -XX:+UseG1GC: JDK 7u4+ 完全支持")?;
+    writeln!(file, "  - -XX:MaxGCPauseMillis: JDK 6u14+ 支持")?;
+    writeln!(file, "  - -XX:ParallelGCThreads/-XX:ConcGCThreads: JDK 6+ 支持")?;
+    writeln!(file, "  - -Djdk.nio.maxCachedBufferSize: JDK 7+ 支持")?;
+    
+    writeln!(file, "- 元空间优化:")?;
+    writeln!(file, "  - -XX:+UseCompressedClassPointers: JDK 6+ 支持64位系统")?;
+    writeln!(file, "  - -XX:CompressedClassSpaceSize: JDK 8+ 支持")?;
+    writeln!(file, "  - -XX:+UnlockExperimentalVMOptions: JDK 7+ 支持")?;
+    writeln!(file, "  - -XX:+UseZGC: JDK 11+ 支持 (JDK 15+ 生产可用)")?;
+    
+    writeln!(file, "- 监控配置:")?;
+    writeln!(file, "  - -XX:NativeMemoryTracking: JDK 8+ 支持")?;
+    writeln!(file, "  - -XX:+PrintGCDetails: JDK 6+ 支持 (JDK 9+ 使用-Xlog:gc*)")?;
+    writeln!(file, "  - -XX:+HeapDumpOnOutOfMemoryError: JDK 6+ 支持")?;
+    
+    writeln!(file, "- 大文件优化:")?;
+    writeln!(file, "  - -Djdk.nio.enableFastFileTransfer: JDK 9+ 支持")?;
+    writeln!(file, "  - DirectIO相关参数: 需要特定JDK实现或第三方库")?;
+
+    writeln!(file, "\n# 基础配置")?;
     writeln!(
         file,
         "-Xms{}g -Xmx{}g",

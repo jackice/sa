@@ -157,15 +157,19 @@ fn analyze_scenario(
 
     // 生成关键发现
     let mut key_findings = Vec::new();
-    if avg_file_size > 10.0 {
-        key_findings.push(format!("大文件场景({}MB): 磁盘IO是主要瓶颈 ({} QPS)", 
-            avg_file_size, final_cap.qps.unwrap_or(0)));
-    } else {
-        key_findings.push(format!("小文件场景({}MB): CPU处理能力是瓶颈 ({}+ QPS)", 
-            avg_file_size, final_cap.qps.unwrap_or(0)));
+    if let Some(limiting_resource) = resources.iter().find(|r| r.limiting_factor) {
+        key_findings.push(format!(
+            "{}场景({}MB): {}是主要瓶颈 ({} QPS)",
+            if avg_file_size > 10.0 { "大文件" } else { "小文件" },
+            avg_file_size,
+            limiting_resource.name,
+            final_cap.qps.unwrap_or(0)
+        ));
     }
-    key_findings.push(format!("直接内存配置: {:.1}GB满足{}级并发需求", 
-        args.total_ram * 0.08, mem_connections));
+    key_findings.push(format!(
+        "直接内存配置: {:.1}GB满足{}级并发需求",
+        args.total_ram * 0.08, mem_connections
+    ));
 
     ScenarioAnalysis {
         name: name.to_string(),
