@@ -1,4 +1,5 @@
 pub mod jvm;
+pub mod performance;
 pub mod safety;
 pub mod scenarios;
 

@@ -46,6 +46,65 @@ pub fn print_configuration(
     );
 }
 
+pub fn print_performance_report(report: &crate::analysis::performance::PerformanceReport) {
+    println!(
+        "\n{}{}",
+        "▬".magenta().bold().reversed(),
+        " 全链路性能分析报告 ".magenta().bold().reversed()
+    );
+    println!("{}", "▬".magenta().bold().repeated(50));
+
+    for scenario in &report.scenarios {
+        println!(
+            "\n  {} (平均文件大小: {}MB)",
+            scenario.name.bold(),
+            scenario.avg_file_size
+        );
+
+        println!(
+            "  {:<12} {:<12} {:<12} {:<12}",
+            "资源类型".cyan(),
+            "限制因素".cyan(),
+            "最大并发量".cyan(),
+            "QPS".cyan()
+        );
+
+        for resource in &scenario.resources {
+            let limit_mark = if resource.limiting_factor { "✓" } else { "" };
+            println!(
+                "  {:<12} {:<12} {:<12} {:<12}",
+                resource.name,
+                limit_mark,
+                resource.max_connections,
+                resource.qps.map_or("-".to_string(), |q| q.to_string())
+            );
+        }
+
+        println!(
+            "\n  {}: {}并发 {} QPS",
+            "最终能力".cyan().bold(),
+            scenario.final_capacity.max_connections,
+            scenario.final_capacity.qps.unwrap_or(0)
+        );
+
+        println!("\n  {}:", "关键发现".cyan());
+        for finding in &scenario.key_findings {
+            println!("    - {}", finding);
+        }
+    }
+
+    println!("\n  {}:", "性能测试建议".cyan().bold());
+    println!("    - {}: {}", "线程数".cyan(), report.test_config.threads);
+    println!("    - {}: {}", "测试时长".cyan(), report.test_config.duration);
+    println!("    - {}: {}", "加压时间".cyan(), report.test_config.ramp_up);
+    println!("    - {}: {:.1} QPS", "目标吞吐量".cyan(), report.test_config.throughput_goal);
+
+    println!("\n  {}:", "测试脚本示例".cyan().bold());
+    for (i, script) in report.test_config.script_examples.iter().enumerate() {
+        println!("    {}. {}", i + 1, script);
+    }
+}
+
 pub fn print_safety_report(safety: &crate::analysis::SafetyAnalysis) {
     println!(
         "\n{}{}",

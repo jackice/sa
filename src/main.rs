@@ -59,5 +59,14 @@ fn main() -> anyhow::Result<()> {
         &safety,
     );
 
+    // 8. 计算并打印性能报告
+    let performance = sa::analysis::performance::calculate_performance(
+        &args,
+        disk_config,
+        direct_mem_gb,
+        heap_mem_gb,
+    );
+    sa::utils::print_performance_report(&performance);
+
     Ok(())
 }
