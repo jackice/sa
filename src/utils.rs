@@ -89,15 +89,27 @@ pub fn print_performance_report(report: &crate::analysis::performance::Performan
 
         println!("\n  {}:", "关键发现".cyan());
         for finding in &scenario.key_findings {
-            println!("    - {}", finding);
+            println!("    - {finding}");
         }
     }
 
     println!("\n  {}:", "性能测试建议".cyan().bold());
     println!("    - {}: {}", "线程数".cyan(), report.test_config.threads);
-    println!("    - {}: {}", "测试时长".cyan(), report.test_config.duration);
-    println!("    - {}: {}", "加压时间".cyan(), report.test_config.ramp_up);
-    println!("    - {}: {:.1} QPS", "目标吞吐量".cyan(), report.test_config.throughput_goal);
+    println!(
+        "    - {}: {}",
+        "测试时长".cyan(),
+        report.test_config.duration
+    );
+    println!(
+        "    - {}: {}",
+        "加压时间".cyan(),
+        report.test_config.ramp_up
+    );
+    println!(
+        "    - {}: {:.1} QPS",
+        "目标吞吐量".cyan(),
+        report.test_config.throughput_goal
+    );
 
     println!("\n  {}:", "测试脚本示例".cyan().bold());
     for (i, script) in report.test_config.script_examples.iter().enumerate() {
