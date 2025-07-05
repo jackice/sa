@@ -3,7 +3,7 @@ use clap::Parser;
 use sa::Args;
 use sa::analysis::{calculate_metaspace, calculate_safety};
 use sa::config;
-use sa::utils::{print_configuration, print_safety_report};
+use sa::utils::{print_configuration, print_safety_report, print_system_limits};
 
 fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -19,8 +19,17 @@ fn main() -> anyhow::Result<()> {
     let disk_write_speed = disk_config.write_speed;
 
     // 1. 计算内存分配
-    let direct_mem_gb = (args.total_ram * 0.08).max(1.0);
-    let heap_mem_gb = (args.total_ram * 0.35).max(4.0);
+    // 根据应用类型动态调整内存分配
+    let (direct_ratio, heap_ratio) = match args.complexity.as_str() {
+        "low" => (0.06, 0.4),    // 低复杂度应用需要更多堆
+        "high" => (0.12, 0.3),   // 高IO应用需要更多直接内存
+        _ => (0.08, 0.35)        // 默认比例
+    };
+    // 保证最小可用内存
+    let direct_mem_gb = (args.total_ram * direct_ratio).max(1.0);
+    let heap_mem_gb = (args.total_ram * heap_ratio).max(4.0);
+    // 保留10%给JVM Native内存(线程栈等)
+    let _native_mem_gb = args.total_ram * 0.1;
     log::debug!(
         "内存分配计算: 总内存={}GB, 直接内存={:.1}GB, 堆内存={:.1}GB",
         args.total_ram,
@@ -34,7 +43,7 @@ fn main() -> anyhow::Result<()> {
     // 3. 计算安全系数
     let safety = calculate_safety(&args, direct_mem_gb, heap_mem_gb);
 
-    // 4. 打印系统配置
+    // 1. 打印系统配置和基础分析
     print_configuration(
         &args,
         direct_mem_gb,
@@ -44,22 +53,16 @@ fn main() -> anyhow::Result<()> {
         disk_write_speed,
     );
 
-    // 5. 打印安全性报告
-    print_safety_report(&safety);
+    // 2. 打印系统极限评估
+    print_system_limits(&safety);
 
-    // 6. 打印场景模拟
+    // 3. 打印场景模拟分析
     sa::analysis::print_scenarios(&safety);
 
-    // 7. 打印JVM配置建议
-    sa::analysis::print_jvm_recommendations(
-        &args,
-        direct_mem_gb,
-        heap_mem_gb,
-        metaspace_size_mb,
-        &safety,
-    );
+    // 4. 打印安全性报告
+    print_safety_report(&safety);
 
-    // 8. 计算并打印性能报告
+    // 5. 计算并打印性能报告
     let performance = sa::analysis::performance::calculate_performance(
         &args,
         disk_config,
@@ -67,6 +70,16 @@ fn main() -> anyhow::Result<()> {
         heap_mem_gb,
     );
     sa::utils::print_performance_report(&performance);
+
+    // 6. 打印JVM配置建议
+    sa::analysis::print_jvm_recommendations(
+        &args,
+        direct_mem_gb,
+        heap_mem_gb,
+        metaspace_size_mb,
+        &safety,
+        &performance,
+    );
 
     // 9. 生成markdown报告
     if args.generate_markdown {

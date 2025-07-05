@@ -5,8 +5,8 @@ use colored::Colorize;
 pub fn print_scenarios(safety: &SafetyAnalysis) {
     println!(
         "\n{}{}",
-        "▬".blue().bold().reversed(),
-        " 场景模拟分析 ".blue().bold().reversed()
+        "▬".magenta().bold().reversed(),
+        " 负载场景模拟 ".magenta().bold().reversed()
     );
     println!("{}", "▬".blue().bold().repeated(50));
 

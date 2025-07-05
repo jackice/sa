@@ -112,9 +112,12 @@ fn analyze_scenario(
     mem_connections: usize,
 ) -> ScenarioAnalysis {
     // 计算各资源限制
-    let network_conn = ((args.net_gbps * 125.0) / avg_file_size) as usize; // Gbps->MB/s
-    let disk_conn = ((disk_config.read_speed * 0.8) / avg_file_size) as usize; // 80%利用率
-    let cpu_conn = args.cpu_cores * (1000 / avg_file_size.max(1.0) as usize); // 假设每个核心处理1GB/s
+    // 考虑TCP/IP协议开销(约3%)和JVM Native内存限制
+    let network_conn = ((args.net_gbps * 125.0 * 0.97) / (avg_file_size * 1.05)) as usize;
+    // 考虑文件系统开销和JVM IO等待
+    let disk_conn = ((disk_config.read_speed * 0.75) / (avg_file_size * 1.1)) as usize;
+    // 考虑GC暂停时间影响(约15%损耗)
+    let cpu_conn = (args.cpu_cores as f64 * (850.0 / avg_file_size.max(1.0))) as usize;
     
     let mut resources = vec![
         ResourceLimit {

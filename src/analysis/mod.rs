@@ -12,7 +12,14 @@ pub use scenarios::print_scenarios;
 const BASE_METASPACE: f64 = 512.0; // 基础元空间大小(MB)
 const CONNECTION_FACTOR: f64 = 50.0; // 每1000连接增加的大小(MB)
 const FILE_SIZE_FACTOR: f64 = 50.0; // 每50MB文件大小增加的大小(MB)
-const SAFETY_MARGIN: f64 = 1.25; // 安全系数
+// Removed unused constant
+fn get_safety_margin(complexity: &str) -> f64 {
+    match complexity {
+        "low" => 1.3,
+        "high" => 1.5, // 高复杂度应用需要更大缓冲
+        _ => 1.4,      // medium默认值
+    }
+}
 const MIN_METASPACE: f64 = 256.0; // 最小元空间大小(MB)
 const MAX_METASPACE: f64 = 2048.0; // 最大元空间大小(MB)
 const COMPLEXITY_LOW_FACTOR: f64 = 0.8; // 低复杂度系数
@@ -69,7 +76,8 @@ pub fn calculate_metaspace(args: &crate::args::Args) -> i32 {
     let raw_total = base + connection_factor + file_size_factor;
 
     // Apply minimum boundary after safety margin
-    let adjusted_total = (raw_total * SAFETY_MARGIN).max(MIN_METASPACE * SAFETY_MARGIN);
+    let safety_margin = get_safety_margin(&args.complexity);
+    let adjusted_total = (raw_total * safety_margin).max(MIN_METASPACE * safety_margin);
 
     adjusted_total.min(MAX_METASPACE).ceil() as i32
 }
@@ -128,7 +136,7 @@ mod tests {
         // Test minimum boundary
         let args = create_test_args("low", 100, 1.0);
         let result = calculate_metaspace(&args);
-        assert_eq!(result, 512); // 256 * 1.25 = 320
+        assert_eq!(result, 533); // 256 * 1.25 = 320
 
         // Test maximum boundary
         let args = create_test_args("high", 10000, 500.0);
@@ -139,7 +147,8 @@ mod tests {
     #[test]
     fn test_calculate_metaspace_normal_case() {
         let args = create_test_args("medium", 2000, 50.0);
-        let expected = (BASE_METASPACE + 100.0 + 50.0) * SAFETY_MARGIN; // base + 2x connection + 1x file
+        let safety_margin = get_safety_margin(&args.complexity);
+        let expected = (BASE_METASPACE + 100.0 + 50.0) * safety_margin; // base + 2x connection + 1x file
         let result = calculate_metaspace(&args);
         assert_approx_eq::assert_approx_eq!(result as f64, expected, 1.0); // Allow 1MB tolerance
     }
