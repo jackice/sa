@@ -33,3 +33,5 @@ Thumbs.db
 .aider/
 aider.conf.json
 aider*.md
+# report files
+/report
