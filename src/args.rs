@@ -50,6 +50,10 @@ pub struct Args {
     /// 应用复杂度级别 [low, medium, high]
     #[clap(short = 'l', long, default_value = "medium")]
     pub complexity: String,
+
+    /// 是否生成markdown报告
+    #[clap(short = 'm', long, action)]
+    pub generate_markdown: bool,
 }
 fn validate_positive_float(s: &str) -> Result<f64, String> {
     let val: f64 = s.parse().map_err(|_| format!("`{s}` 不是有效的浮点数"))?;

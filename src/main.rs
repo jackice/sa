@@ -68,5 +68,21 @@ fn main() -> anyhow::Result<()> {
     );
     sa::utils::print_performance_report(&performance);
 
+    // 9. 生成markdown报告
+    if args.generate_markdown {
+        let report_ctx = sa::utils::ReportContext {
+            args: &args,
+            direct_mem_gb,
+            heap_mem_gb,
+            metaspace_size_mb,
+            disk_read_speed,
+            disk_write_speed,
+            safety: &safety,
+            performance: &performance,
+        };
+        sa::utils::generate_markdown_report(&report_ctx)?;
+        log::info!("Markdown报告已生成: sa_report.md");
+    }
+
     Ok(())
 }
