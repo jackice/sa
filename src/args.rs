@@ -16,7 +16,7 @@ pub enum AnalysisError {
 #[clap(version = "3.2", author = "System Safety Analyst")]
 pub struct Args {
     /// 服务器总内存(GB) [必须大于0]
-    #[clap(short, long, default_value = "32", value_parser = validate_positive_float)]
+    #[clap(short= 'r', long, default_value = "32", value_parser = validate_positive_float)]
     pub total_ram: f64,
 
     /// CPU核心数
