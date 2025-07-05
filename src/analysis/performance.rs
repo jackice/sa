@@ -29,9 +29,19 @@ pub struct ScenarioAnalysis {
 pub struct TestConfig {
     pub threads: usize,           // 建议线程数
     pub duration: String,         // 测试时长建议
-    pub ramp_up: String,          // 加压时间建议
+    pub ramp_up: String,          // 加压时间建议 
     pub throughput_goal: f64,     // 目标吞吐量(MB/s)
     pub script_examples: Vec<String>, // 测试脚本示例
+    pub test_scenarios: Vec<TestScenario>, // 针对不同文件类型的测试场景
+}
+
+/// 针对不同文件类型的测试场景配置
+pub struct TestScenario {
+    pub name: String,            // 场景名称
+    pub file_size_range: String, // 文件大小范围
+    pub suggested_threads: usize, // 推荐线程数
+    pub test_duration: String,   // 推荐测试时长
+    pub success_criteria: String, // 成功标准
 }
 
 /// 计算性能报告
@@ -88,14 +98,39 @@ pub fn calculate_performance(
         ),
     ];
 
+    let test_scenarios = vec![
+        TestScenario {
+            name: "小文件高并发".to_string(),
+            file_size_range: "1KB-10MB".to_string(),
+            suggested_threads: args.cpu_cores * 4,
+            test_duration: "30m".to_string(),
+            success_criteria: "P99延迟<100ms".to_string(),
+        },
+        TestScenario {
+            name: "中等文件".to_string(),
+            file_size_range: "10MB-100MB".to_string(),
+            suggested_threads: args.cpu_cores * 2,
+            test_duration: "60m".to_string(),
+            success_criteria: "吞吐量波动<10%".to_string(),
+        },
+        TestScenario {
+            name: "大文件流式".to_string(),
+            file_size_range: "100MB-1GB".to_string(),
+            suggested_threads: args.cpu_cores,
+            test_duration: "120m".to_string(),
+            success_criteria: "内存使用稳定".to_string(),
+        },
+    ];
+
     let test_config = TestConfig {
         threads: args.cpu_cores * 2,
-        duration: "10m".to_string(),
-        ramp_up: "1m".to_string(),
+        duration: "60m".to_string(),  // 默认延长测试时间
+        ramp_up: "5m".to_string(),    // 更平缓的加压
         throughput_goal: scenarios.iter()
             .map(|s| s.final_capacity.qps.unwrap_or(0) as f64)
             .fold(f64::INFINITY, |a, b| a.min(b)),
         script_examples,
+        test_scenarios,
     };
 
     PerformanceReport {

@@ -47,12 +47,16 @@ pub struct Args {
     #[clap(short = 'p', long, default_value = "true")]
     pub enable_memory_guard: bool,
 
+    /// 是否启用内存映射文件优化(大文件场景) [true, false]
+    #[clap(short = 'm', long, default_value = "false")]
+    pub enable_memory_mapping: bool,
+
     /// 应用复杂度级别 [low, medium, high]
     #[clap(short = 'l', long, default_value = "medium")]
     pub complexity: String,
 
     /// 是否生成markdown报告
-    #[clap(short = 'm', long, action)]
+    #[clap(short = 'g', long, action)]
     pub generate_markdown: bool,
 }
 fn validate_positive_float(s: &str) -> Result<f64, String> {

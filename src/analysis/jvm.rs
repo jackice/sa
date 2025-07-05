@@ -1,5 +1,5 @@
 use crate::utils::Repeated;
-use crate::{SafetyAnalysis, args::Args, analysis::performance::PerformanceReport};
+use crate::{SafetyAnalysis, analysis::performance::PerformanceReport, args::Args};
 use colored::Colorize; // Bring trait implementation into scope
 
 /// 基于全面分析生成最终JVM配置建议
@@ -12,8 +12,14 @@ pub fn print_jvm_recommendations(
     _performance: &PerformanceReport,
 ) {
     // 1. 评估当前配置是否满足6个月稳定运行
-    let meets_requirements = safety.theoretical_limits.estimated_uptime.contains("6-12个月") 
-        || safety.theoretical_limits.estimated_uptime.contains("12个月+");
+    let meets_requirements = safety
+        .theoretical_limits
+        .estimated_uptime
+        .contains("6-12个月")
+        || safety
+            .theoretical_limits
+            .estimated_uptime
+            .contains("12个月+");
 
     // 2. 计算理论最大连接数(基于最严格限制资源)
     let max_sustainable_conn = safety.theoretical_limits.max_connections;
@@ -29,19 +35,31 @@ pub fn print_jvm_recommendations(
     println!("{}", "▬".green().bold().repeated(50));
 
     println!("\n{}", "  # 系统能力评估".bold());
-    println!("  - 当前配置理论最大连接数: {}", max_sustainable_conn);
-    println!("  - 目标连接数: {}", target_conn);
-    println!("  - 稳定运行预期: {}", safety.theoretical_limits.estimated_uptime);
-    println!("  - 主要瓶颈资源: {}", safety.theoretical_limits.limiting_factor);
+    println!("  - 当前配置理论最大连接数: {max_sustainable_conn}");
+    println!("  - 目标连接数: {target_conn}");
+    println!(
+        "  - 稳定运行预期: {}",
+        safety.theoretical_limits.estimated_uptime
+    );
+    println!(
+        "  - 主要瓶颈资源: {}",
+        safety.theoretical_limits.limiting_factor
+    );
 
     if !meets_requirements {
-        println!("\n{}", "  ❗ 警告: 当前配置无法满足6个月稳定运行要求".red().bold());
+        println!(
+            "\n{}",
+            "  ❗ 警告: 当前配置无法满足6个月稳定运行要求".red().bold()
+        );
     }
 
     if needs_scaling {
-        println!("\n{}", "  ⚠️ 注意: 目标连接数超过理论最大值".yellow().bold());
+        println!(
+            "\n{}",
+            "  ⚠️ 注意: 目标连接数超过理论最大值".yellow().bold()
+        );
         println!("  - 需要调整资源配置或优化应用");
-        println!("  - 理论可达到连接数: {}", max_sustainable_conn);
+        println!("  - 理论可达到连接数: {max_sustainable_conn}");
     }
 
     // 4. 生成最终配置建议
@@ -54,38 +72,52 @@ pub fn print_jvm_recommendations(
     println!("{}", "▬".green().bold().repeated(50));
 
     // JDK版本兼容性评估
-    println!("\n{}", "  # JDK版本兼容性".bold());
+    println!("\n{}", "  ## JDK版本兼容矩阵".bold());
+    println!("  {:<45} {:<15} {:<15}", "参数".cyan(), "最低JDK".cyan(), "生产推荐".cyan());
+    println!("  {:-<80}", "-");
+    println!("  {:<45} {:<15} {:<15}", "-Xms/-Xmx", "JDK 1.0", "JDK 8+");
+    println!("  {:<45} {:<15} {:<15}", "-XX:MaxDirectMemorySize", "JDK 1.4", "JDK 11+");
+    println!("  {:<45} {:<15} {:<15}", "-XX:MaxMetaspaceSize", "JDK 8", "JDK 11+");
+    println!("  {:<45} {:<15} {:<15}", "-XX:+UseG1GC", "JDK 7u4", "JDK 11+");
+    println!("  {:<45} {:<15} {:<15}", "-XX:+UseZGC", "JDK 11", "JDK 17+");
+    println!("  {:<45} {:<15} {:<15}", "-XX:+UseShenandoahGC", "JDK 12", "JDK 17+");
+    println!("  {:<45} {:<15} {:<15}", "-XX:NativeMemoryTracking", "JDK 8", "JDK 11+");
+    println!("  {:<45} {:<15} {:<15}", "-Djdk.nio.enableFastFileTransfer", "JDK 9", "JDK 17+");
+    println!("  {:<45} {:<15} {:<15}", "-XX:+UnlockExperimentalVMOptions", "JDK 7", "JDK 11+");
+    println!("  {:<45} {:<15} {:<15}", "-XX:+UseCompressedClassPointers", "JDK 6", "JDK 11+");
+
+    println!("\n{}", "  ## JDK版本建议".bold());
     if args.complexity == "high" {
         println!("  - 建议使用JDK 17+ (包含ZGC和元空间优化)");
     } else {
         println!("  - 最低要求: JDK 11");
         println!("  - 推荐版本: JDK 17+ (更好的性能与内存管理)");
     }
-    
+
     println!("\n{}", "  ## 参数兼容性详情".bold());
     println!("  - 基础配置:");
     println!("    - -Xms/-Xmx: 所有版本支持");
     println!("    - -XX:MaxDirectMemorySize: JDK 6+ 支持");
     println!("    - -XX:MaxMetaspaceSize: JDK 8+ 支持 (JDK 7及以下使用-XX:MaxPermSize)");
     println!("    - -XX:ReservedCodeCacheSize: JDK 6+ 支持");
-    
+
     println!("  - 内存防护增强:");
     println!("    - -XX:+UseG1GC: JDK 7u4+ 完全支持");
     println!("    - -XX:MaxGCPauseMillis: JDK 6u14+ 支持");
     println!("    - -XX:ParallelGCThreads/-XX:ConcGCThreads: JDK 6+ 支持");
     println!("    - -Djdk.nio.maxCachedBufferSize: JDK 7+ 支持");
-    
+
     println!("  - 元空间优化:");
     println!("    - -XX:+UseCompressedClassPointers: JDK 6+ 支持64位系统");
     println!("    - -XX:CompressedClassSpaceSize: JDK 8+ 支持");
     println!("    - -XX:+UnlockExperimentalVMOptions: JDK 7+ 支持");
     println!("    - -XX:+UseZGC: JDK 11+ 支持 (JDK 15+ 生产可用)");
-    
+
     println!("  - 监控配置:");
     println!("    - -XX:NativeMemoryTracking: JDK 8+ 支持");
     println!("    - -XX:+PrintGCDetails: JDK 6+ 支持 (JDK 9+ 使用-Xlog:gc*)");
     println!("    - -XX:+HeapDumpOnOutOfMemoryError: JDK 6+ 支持");
-    
+
     println!("  - 大文件优化:");
     println!("    - -Djdk.nio.enableFastFileTransfer: JDK 9+ 支持");
     println!("    - DirectIO相关参数: 需要特定JDK实现或第三方库");
@@ -97,62 +129,100 @@ pub fn print_jvm_recommendations(
         let new_heap = (heap_mem_gb * scale_factor).max(heap_mem_gb * 1.2);
         let new_direct = (direct_mem_gb * scale_factor).max(direct_mem_gb * 1.3);
         let total_ram_needed = (new_heap + new_direct) / 0.85; // 保留15%给系统
-        
+
         (
             new_heap as i32,
             new_direct as i32,
-            Some(total_ram_needed.ceil() as i32)
+            Some(total_ram_needed.ceil() as i32),
         )
     } else {
         (heap_mem_gb as i32, direct_mem_gb as i32, None)
     };
 
     println!("{}", "  ## 基础配置".bold());
-    println!("  -Xms{}g -Xmx{}g  # {}", final_heap, final_heap, 
-        if needs_scaling { "已按目标调整" } else { "基于当前负载" });
-    println!("  -XX:MaxDirectMemorySize={}g  # {}", final_direct,
-        if needs_scaling { "已按目标调整" } else { "基于当前负载" });
+    println!(
+        "  -Xms{}g -Xmx{}g  # {}",
+        final_heap,
+        final_heap,
+        if needs_scaling {
+            "已按目标调整"
+        } else {
+            "基于当前负载"
+        }
+    );
+    println!(
+        "  -XX:MaxDirectMemorySize={}g  # {}",
+        final_direct,
+        if needs_scaling {
+            "已按目标调整"
+        } else {
+            "基于当前负载"
+        }
+    );
+    println!("  -XX:MaxDirectMemorySize={}g  # 必须显式设置且小于物理内存", 
+        final_direct.min(args.total_ram as i32 - 2)  // 保留2GB给系统
+    );
     println!("  -XX:MaxMetaspaceSize={metaspace_size_mb}m  # 动态计算值");
     println!("  -XX:ReservedCodeCacheSize=256m  # 固定值");
 
     // 添加容量说明
     println!("\n{}", "  ## 容量说明".bold());
-    println!("  - 配置支持最大连接数: {}", max_sustainable_conn);
+    println!("  - 配置支持最大连接数: {max_sustainable_conn}");
     if needs_scaling {
-        println!("  - {}: 需要额外 {}% 资源以达到目标连接数", 
-            "资源缺口".red(), 
-            ((target_conn as f64 / max_sustainable_conn as f64 - 1.0) * 100.0) as i32);
-        
+        println!(
+            "  - {}: 需要额外 {}% 资源以达到目标连接数",
+            "资源缺口".red(),
+            ((target_conn as f64 / max_sustainable_conn as f64 - 1.0) * 100.0) as i32
+        );
+
         if let Some(ram_needed) = server_ram_needed {
-            println!("  - {}: 建议服务器内存至少 {}GB (当前 {}GB)",
+            println!(
+                "  - {}: 建议服务器内存至少 {}GB (当前 {}GB)",
                 "内存扩容建议".yellow(),
                 ram_needed,
-                args.total_ram as i32);
-            
+                args.total_ram as i32
+            );
+
             // CPU核心建议 (每1000连接需要1核)
             let suggested_cores = (target_conn as f64 / 1000.0).ceil() as i32;
             if suggested_cores > args.cpu_cores as i32 {
-                println!("  - {}: 建议CPU核心数 {} (当前 {})",
+                println!(
+                    "  - {}: 建议CPU核心数 {} (当前 {})",
                     "CPU扩容建议".yellow(),
                     suggested_cores,
-                    args.cpu_cores);
+                    args.cpu_cores
+                );
             }
-            
+
             // 网络带宽建议 (每连接0.2Mbps)
             let suggested_bandwidth = (target_conn as f64 * 0.2 / 1000.0).ceil() as i32;
             if suggested_bandwidth > args.net_gbps as i32 {
-                println!("  - {}: 建议网络带宽 {}Gbps (当前 {}Gbps)",
+                println!(
+                    "  - {}: 建议网络带宽 {}Gbps (当前 {}Gbps)",
                     "网络扩容建议".yellow(),
                     suggested_bandwidth,
-                    args.net_gbps);
+                    args.net_gbps
+                );
             }
         }
     }
 
     // 内存防护增强
     println!("\n{}", "  # 内存防护增强".bold());
-    println!("  -XX:+UseG1GC");
-    println!("  -XX:MaxGCPauseMillis=200");
+    match args.complexity.as_str() {
+        "high" => {
+            println!("  -XX:+UseZGC  # 低延迟GC，适合高复杂度应用");
+            println!("  -XX:ZCollectionInterval=5  # 每5秒一次ZGC");
+        }
+        "low" => {
+            println!("  -XX:+UseG1GC  # 平衡型GC");
+            println!("  -XX:MaxGCPauseMillis=200");
+        }
+        _ => {
+            println!("  -XX:+UseShenandoahGC  # 并发GC");
+            println!("  -XX:ShenandoahGCHeuristics=adaptive");
+        }
+    }
     println!(
         "  -XX:ParallelGCThreads={}",
         (args.cpu_cores as f64 * 0.5).ceil() as i32

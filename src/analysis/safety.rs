@@ -38,37 +38,69 @@ pub struct Scenario {
     pub status: String,        // 安全/警告/危险
 }
 
-pub fn calculate_safety(args: &Args, direct_mem_gb: f64, heap_mem_gb: f64) -> SafetyAnalysis {
-    // 常量定义
-    // 文件传输场景需要更大的直接内存缓冲
-    const READ_BUFFER_PER_CONN: f64 = 512.0 / 1024.0 / 1024.0; // 512KB -> GB
-    const WRITE_BUFFER_PER_CONN: f64 = 1.0 / 1024.0; // 1MB -> GB 
-    const OVERHEAD_PER_CONN: f64 = 100.0 / 1024.0 / 1024.0; // 100KB -> GB
-    // Removed unused constant
-    const HEAP_PER_CONN: f64 = 256.0 / 1024.0 / 1024.0; // 256KB -> GB
+/// 动态计算每个连接的直接内存需求
+fn calculate_direct_mem_per_conn(file_size: f64) -> (f64, f64) {
+    // 读缓冲区大小 (动态调整)
+    let read_buffer = if file_size <= 10.0 {
+        128.0 // 128KB for small files
+    } else if file_size <= 100.0 {
+        512.0 // 512KB for medium files
+    } else {
+        // For large files, use 1MB buffer but allow chunked processing
+        // with memory mapping optimization
+        (1024.0_f64).min(file_size * 0.01) // 1MB or 1% of file size, whichever is smaller
+    };
 
-    // 计算正常场景内存使用
-    let normal_direct_usage = args.expected_connections as f64
-        * (READ_BUFFER_PER_CONN + WRITE_BUFFER_PER_CONN + OVERHEAD_PER_CONN);
+    // 写缓冲区大小 (通常比读缓冲区大)
+    let write_buffer = read_buffer * 1.5;
+
+    // 额外开销 (SSL/TLS, headers etc)
+    let overhead = 100.0; // 100KB fixed overhead
+
+    (
+        read_buffer / 1024.0 / 1024.0,               // convert to GB
+        (write_buffer + overhead) / 1024.0 / 1024.0, // convert to GB
+    )
+}
+
+pub fn calculate_safety(args: &Args, direct_mem_gb: f64, heap_mem_gb: f64) -> SafetyAnalysis {
+    const HEAP_PER_CONN: f64 = 384.0 / 1024.0 / 1024.0; // 384KB -> GB (含对象开销)
+
+    // 计算正常场景内存使用 (动态调整缓冲区大小)
+    let (read_buffer_per_conn, write_buffer_per_conn) =
+        calculate_direct_mem_per_conn(args.avg_file_size);
+    let normal_direct_usage =
+        args.expected_connections as f64 * (read_buffer_per_conn + write_buffer_per_conn);
+
+    // 如果是大文件(>100MB)且使用内存映射，可以减少直接内存需求
+    let mem_map_reduction = if args.avg_file_size > 100.0 && args.enable_memory_mapping {
+        0.5 // 内存映射可减少50%直接内存需求
+    } else {
+        1.0
+    };
+    let normal_direct_usage = normal_direct_usage * mem_map_reduction;
     let normal_heap_usage = args.expected_connections as f64 * HEAP_PER_CONN;
 
     // 计算突发场景内存使用
     let burst_connections = (args.expected_connections as f64 * args.burst_factor) as usize;
-    let burst_direct_usage = burst_connections as f64
-        * (READ_BUFFER_PER_CONN + WRITE_BUFFER_PER_CONN + OVERHEAD_PER_CONN);
+    let (burst_read, burst_write) = calculate_direct_mem_per_conn(args.avg_file_size);
+    let burst_direct_usage = burst_connections as f64 * (burst_read + burst_write);
     let burst_heap_usage = burst_connections as f64 * HEAP_PER_CONN;
 
-    // 计算安全系数 (0-1)
-    let heap_safety = 1.0 - (normal_heap_usage / (heap_mem_gb * 0.8)).min(1.0);
-    let direct_mem_safety = 1.0 - (normal_direct_usage / (direct_mem_gb * 0.8)).min(1.0);
+    // 计算安全系数 (0-1)，保留15%给JVM Native内存
+    const JVM_NATIVE_RATIO: f64 = 0.15;
+    let available_heap = heap_mem_gb * (1.0 - JVM_NATIVE_RATIO);
+    let available_direct = direct_mem_gb * (1.0 - JVM_NATIVE_RATIO);
 
-    // 确定整体风险等级
-    let risk_level = if heap_safety > 0.3 && direct_mem_safety > 0.3 {
-        "低风险".to_string()
-    } else if heap_safety > 0.15 && direct_mem_safety > 0.15 {
-        "中风险".to_string()
-    } else {
-        "高风险".to_string()
+    // 使用更保守的安全阈值(0.7)
+    let heap_safety = 1.0 - (normal_heap_usage / (available_heap * 0.7)).min(1.0);
+    let direct_mem_safety = 1.0 - (normal_direct_usage / (available_direct * 0.7)).min(1.0);
+
+    // 改进的风险等级评估
+    let risk_level = match (heap_safety, direct_mem_safety) {
+        (h, d) if h > 0.4 && d > 0.4 => "低风险".to_string(),
+        (h, d) if h > 0.2 || d > 0.2 => "中风险".to_string(),
+        _ => "高风险".to_string(),
     };
 
     // 创建模拟场景
@@ -176,10 +208,20 @@ pub fn calculate_safety(args: &Args, direct_mem_gb: f64, heap_mem_gb: f64) -> Sa
         recommendations.push("- 优化大文件处理: 使用分块上传和内存映射文件".to_string());
     }
 
-    // 长期运行防护建议
-    recommendations.push("- 定期重启服务: 建议每24小时滚动重启一次".to_string());
-    recommendations.push("- 添加内存监控: 监控堆/直接内存的长期增长趋势".to_string());
-    recommendations.push("- 启用GC日志分析: 使用工具定期分析GC日志".to_string());
+    // 增强长期运行评估和建议
+    let heap_growth_rate = normal_heap_usage * 0.05; // 假设每小时堆增长5%
+    let oom_hours = ((heap_mem_gb * 0.9 - normal_heap_usage) / heap_growth_rate).max(0.0);
+
+    recommendations.push(format!(
+        "- 内存泄漏评估: 当前配置可能在{oom_hours:.1}小时后发生OOM"
+    ));
+    recommendations.push("- 添加内存监控: 实时监控堆/直接内存的增长率".to_string());
+    recommendations.push("- 启用GC日志分析: 建议使用Prometheus+Grafana监控".to_string());
+    recommendations.push("- 启用堆转储: 设置-XX:+HeapDumpOnOutOfMemoryError".to_string());
+
+    if oom_hours < 24.0 {
+        recommendations.push("❗ 紧急: 内存泄漏风险高，需要立即优化".red().to_string());
+    }
 
     // 计算理论极限
     let theoretical_limits = calculate_theoretical_limits(
@@ -209,23 +251,30 @@ fn calculate_theoretical_limits(
     normal_heap_usage: f64,
 ) -> TheoreticalLimits {
     // 基于JVM推荐配置的资源消耗模型
-    const DIRECT_MEM_PER_CONN: f64 = 512.0 / 1024.0 / 1024.0; // 512KB/连接(含安全缓冲)
     const HEAP_PER_CONN: f64 = 384.0 / 1024.0 / 1024.0; // 384KB/连接(含对象开销)
     const METASPACE_PER_CONN: f64 = 64.0 / 1024.0; // 64KB/连接
     const CPU_PER_CONN: f64 = 0.0005; // 每个连接占用的CPU资源(核)
     const NET_PER_CONN: f64 = 0.2; // 每个连接平均带宽(Mbps)
     const DISK_IO_PER_CONN: f64 = 0.15; // 每个连接IOPS需求
 
-    // 稳定性系数(6-12个月稳定运行)
-    const STABILITY_FACTOR: f64 = 0.7; // 只使用70%资源保证长期稳定
-    const SAFE_MEM_USAGE: f64 = 0.75; // 内存安全使用阈值
+    // 长期稳定性系数
+    const STABILITY_FACTOR: f64 = 0.6; // 只使用60%资源保证长期稳定
+    const SAFE_MEM_USAGE: f64 = 0.7; // 更保守的内存使用阈值
 
     // 1. 计算各维度极限(考虑突发流量)
     let burst_connections = (args.expected_connections as f64 * args.burst_factor) as usize;
 
-    // 内存限制(基于JVM推荐配置)
-    let max_by_direct =
-        ((direct_mem_gb * SAFE_MEM_USAGE) / DIRECT_MEM_PER_CONN * STABILITY_FACTOR) as usize;
+    // 动态计算每个连接的直接内存需求
+    let (read_buffer, write_buffer) = calculate_direct_mem_per_conn(args.avg_file_size);
+    let direct_mem_per_conn = read_buffer + write_buffer;
+
+    // 内存限制(基于动态计算)
+    let max_by_direct = if args.enable_memory_mapping && args.avg_file_size > 100.0 {
+        // 内存映射优化可支持更多连接
+        ((direct_mem_gb * SAFE_MEM_USAGE) / (direct_mem_per_conn * 0.7) * STABILITY_FACTOR) as usize
+    } else {
+        ((direct_mem_gb * SAFE_MEM_USAGE) / direct_mem_per_conn * STABILITY_FACTOR) as usize
+    };
     let max_by_heap = ((heap_mem_gb * SAFE_MEM_USAGE) / HEAP_PER_CONN * STABILITY_FACTOR) as usize;
 
     // 元空间限制(基于动态计算结果)
@@ -249,8 +298,8 @@ fn calculate_theoretical_limits(
             } else {
                 (100_000.0, None)
             }
-        },
-        _ => (200.0, Some("必须升级到SSD")) // HDD
+        }
+        _ => (200.0, Some("必须升级到SSD")), // HDD
     };
     let max_by_disk = ((disk_iops / DISK_IO_PER_CONN) * STABILITY_FACTOR) as usize;
 
@@ -314,15 +363,17 @@ fn calculate_theoretical_limits(
 }
 
 fn status_label(heap_usage: f64, heap_max: f64, direct_usage: f64, direct_max: f64) -> String {
-    let heap_ratio = heap_usage / heap_max;
-    let direct_ratio = direct_usage / direct_max;
+    // 考虑JVM自身开销(15%)和长期运行余量(15%)
+    let effective_heap_max = heap_max * 0.7;
+    let effective_direct_max = direct_max * 0.7;
 
-    if heap_ratio < 0.7 && direct_ratio < 0.7 {
-        "✅ 安全".green().to_string()
-    } else if heap_ratio < 0.85 && direct_ratio < 0.85 {
-        "⚠️ 警告".yellow().to_string()
-    } else {
-        "🔥 危险".red().to_string()
+    let heap_ratio = heap_usage / effective_heap_max;
+    let direct_ratio = direct_usage / effective_direct_max;
+
+    match (heap_ratio, direct_ratio) {
+        (h, d) if h < 0.6 && d < 0.6 => "✅ 安全".green().to_string(),
+        (h, d) if h < 0.8 || d < 0.8 => "⚠️ 警告".yellow().to_string(),
+        _ => "🔥 危险".red().to_string(),
     }
 }
 
@@ -334,13 +385,28 @@ mod tests {
     #[test]
     fn test_calculate_safety() {
         let args = Args {
+            total_ram: 16.0,
+            cpu_cores: 8,
+            net_gbps: 1.0,
+            disk_type: "sata_ssd".to_string(),
             expected_connections: 1000,
-            burst_factor: 3.0,
-            avg_file_size: 10.0,
-            ..Default::default()
+            burst_factor: 2.0,
+            avg_file_size: 5.0,
+            enable_memory_guard: true,
+            enable_memory_mapping: false,
+            complexity: "medium".to_string(),
+            generate_markdown: false,
         };
-        let safety = calculate_safety(&args, 2.0, 8.0);
-        assert!(safety.heap_safety > 0.0);
-        assert!(safety.direct_mem_safety > 0.0);
+        let safety = calculate_safety(&args, 4.0, 12.0);
+        assert!(safety.heap_safety > 0.0, "Heap safety should be positive");
+        assert!(
+            safety.direct_mem_safety > 0.0,
+            "Direct memory safety should be positive"
+        );
+        assert!(!safety.scenarios.is_empty(), "Should generate scenarios");
+        assert!(
+            !safety.recommendations.is_empty(),
+            "Should generate recommendations"
+        );
     }
 }

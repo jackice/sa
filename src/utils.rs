@@ -142,139 +142,104 @@ pub fn generate_markdown_report(ctx: &ReportContext) -> anyhow::Result<()> {
 
     // 7. JVM配置建议
     writeln!(file, "## JVM配置建议")?;
-    writeln!(file, "```")?;
+    writeln!(file, "```ini")?;
+    
+    // 基础配置
+    writeln!(file, "# 基础配置")?;
+    writeln!(file, "-Xms{}g -Xmx{}g", ctx.heap_mem_gb as i32, ctx.heap_mem_gb as i32)?;
+    writeln!(file, "-XX:MaxDirectMemorySize={}g", ctx.direct_mem_gb as i32)?;
+    writeln!(file, "-XX:MaxMetaspaceSize={}m", ctx.metaspace_size_mb)?;
+    writeln!(file, "-XX:ReservedCodeCacheSize=256m")?;
+    writeln!(file)?;
 
-    // JDK版本兼容性评估
-    writeln!(file, "# JDK版本兼容性")?;
+    // GC配置
+    writeln!(file, "# GC配置")?;
+    match ctx.args.complexity.as_str() {
+        "high" => {
+            writeln!(file, "-XX:+UseZGC  # 低延迟GC，适合高复杂度应用")?;
+            writeln!(file, "-XX:ZCollectionInterval=5  # 每5秒一次ZGC")?;
+        }
+        "low" => {
+            writeln!(file, "-XX:+UseG1GC  # 平衡型GC")?;
+            writeln!(file, "-XX:MaxGCPauseMillis=200")?;
+        }
+        _ => {
+            writeln!(file, "-XX:+UseShenandoahGC  # 并发GC")?;
+            writeln!(file, "-XX:ShenandoahGCHeuristics=adaptive")?;
+        }
+    }
+    writeln!(file, "-XX:ParallelGCThreads={}", (ctx.args.cpu_cores as f64 * 0.5).ceil() as i32)?;
+    writeln!(file, "-XX:ConcGCThreads={}", (ctx.args.cpu_cores as f64 * 0.25).ceil() as i32)?;
+    writeln!(file)?;
+
+    // 内存优化
+    writeln!(file, "# 内存优化")?;
+    if ctx.safety.direct_mem_safety < 0.4 {
+        writeln!(file, "-Djdk.nio.maxCachedBufferSize=131072  # 降低缓存阈值至128KB")?;
+    } else {
+        writeln!(file, "-Djdk.nio.maxCachedBufferSize=262144  # 256KB缓存阈值")?;
+    }
+
+    if ctx.args.enable_memory_guard {
+        writeln!(file, "-Dapp.memory.guard.enabled=true")?;
+        writeln!(file, "-Dapp.memory.guard.direct.threshold={:.1}g", ctx.direct_mem_gb * 0.85)?;
+        writeln!(file, "-Dapp.memory.guard.heap.threshold={:.1}g", ctx.heap_mem_gb * 0.8)?;
+    }
+    writeln!(file)?;
+
+    // 元空间优化
+    if ctx.args.complexity == "high" {
+        writeln!(file, "# 元空间优化")?;
+        writeln!(file, "-XX:+UseCompressedClassPointers")?;
+        writeln!(file, "-XX:CompressedClassSpaceSize={}m", (ctx.metaspace_size_mb as f32 * 0.4).max(256.0) as i32)?;
+        writeln!(file, "-XX:+UnlockExperimentalVMOptions")?;
+        writeln!(file)?;
+    }
+
+    // 监控配置
+    writeln!(file, "# 监控与诊断")?;
+    writeln!(file, "-XX:NativeMemoryTracking=detail")?;
+    writeln!(file, "-XX:+PrintGCDetails -XX:+PrintGCDateStamps")?;
+    writeln!(file, "-XX:+HeapDumpOnOutOfMemoryError")?;
+    writeln!(file, "-XX:HeapDumpPath=/var/log/jvm_dumps")?;
+    writeln!(file)?;
+
+    // 大文件优化
+    if ctx.args.avg_file_size > 50.0 {
+        writeln!(file, "# 大文件优化")?;
+        writeln!(file, "-Djdk.nio.enableFastFileTransfer=true")?;
+        writeln!(file, "-Dapp.file.maxChunkSize=2097152  # 2MB分块")?;
+        writeln!(file, "-Dapp.file.useDirectIO=true")?;
+        writeln!(file)?;
+    }
+
+    // 版本兼容性
+    writeln!(file, "# JDK版本建议")?;
     if ctx.args.complexity == "high" {
         writeln!(file, "- 建议使用JDK 17+ (包含ZGC和元空间优化)")?;
     } else {
         writeln!(file, "- 最低要求: JDK 11")?;
         writeln!(file, "- 推荐版本: JDK 17+ (更好的性能与内存管理)")?;
     }
+    writeln!(file, "```\n")?;
 
-    writeln!(file, "\n## 参数兼容性详情")?;
+    // 参数兼容性详情
+    writeln!(file, "## 参数兼容性详情")?;
     writeln!(file, "- 基础配置:")?;
     writeln!(file, "  - -Xms/-Xmx: 所有版本支持")?;
     writeln!(file, "  - -XX:MaxDirectMemorySize: JDK 6+ 支持")?;
-    writeln!(
-        file,
-        "  - -XX:MaxMetaspaceSize: JDK 8+ 支持 (JDK 7及以下使用-XX:MaxPermSize)"
-    )?;
+    writeln!(file, "  - -XX:MaxMetaspaceSize: JDK 8+ 支持 (JDK 7及以下使用-XX:MaxPermSize)")?;
     writeln!(file, "  - -XX:ReservedCodeCacheSize: JDK 6+ 支持")?;
 
-    writeln!(file, "- 内存防护增强:")?;
+    writeln!(file, "- GC配置:")?;
     writeln!(file, "  - -XX:+UseG1GC: JDK 7u4+ 完全支持")?;
-    writeln!(file, "  - -XX:MaxGCPauseMillis: JDK 6u14+ 支持")?;
-    writeln!(
-        file,
-        "  - -XX:ParallelGCThreads/-XX:ConcGCThreads: JDK 6+ 支持"
-    )?;
-    writeln!(file, "  - -Djdk.nio.maxCachedBufferSize: JDK 7+ 支持")?;
-
-    writeln!(file, "- 元空间优化:")?;
-    writeln!(
-        file,
-        "  - -XX:+UseCompressedClassPointers: JDK 6+ 支持64位系统"
-    )?;
-    writeln!(file, "  - -XX:CompressedClassSpaceSize: JDK 8+ 支持")?;
-    writeln!(file, "  - -XX:+UnlockExperimentalVMOptions: JDK 7+ 支持")?;
     writeln!(file, "  - -XX:+UseZGC: JDK 11+ 支持 (JDK 15+ 生产可用)")?;
+    writeln!(file, "  - -XX:+UseShenandoahGC: JDK 12+ 支持")?;
+    writeln!(file, "  - -XX:MaxGCPauseMillis: JDK 6u14+ 支持")?;
 
     writeln!(file, "- 监控配置:")?;
     writeln!(file, "  - -XX:NativeMemoryTracking: JDK 8+ 支持")?;
-    writeln!(
-        file,
-        "  - -XX:+PrintGCDetails: JDK 6+ 支持 (JDK 9+ 使用-Xlog:gc*)"
-    )?;
     writeln!(file, "  - -XX:+HeapDumpOnOutOfMemoryError: JDK 6+ 支持")?;
-
-    writeln!(file, "- 大文件优化:")?;
-    writeln!(file, "  - -Djdk.nio.enableFastFileTransfer: JDK 9+ 支持")?;
-    writeln!(file, "  - DirectIO相关参数: 需要特定JDK实现或第三方库")?;
-
-    writeln!(file, "\n# 基础配置")?;
-    writeln!(
-        file,
-        "-Xms{}g -Xmx{}g",
-        ctx.heap_mem_gb as i32, ctx.heap_mem_gb as i32
-    )?;
-    writeln!(
-        file,
-        "-XX:MaxDirectMemorySize={}g",
-        ctx.direct_mem_gb as i32
-    )?;
-    writeln!(file, "-XX:MaxMetaspaceSize={}m", ctx.metaspace_size_mb)?;
-    writeln!(file, "-XX:ReservedCodeCacheSize=256m")?;
-
-    writeln!(file, "\n# 内存防护增强")?;
-    writeln!(file, "-XX:+UseG1GC")?;
-    writeln!(file, "-XX:MaxGCPauseMillis=200")?;
-    writeln!(
-        file,
-        "-XX:ParallelGCThreads={}",
-        (ctx.args.cpu_cores as f64 * 0.5).ceil() as i32
-    )?;
-    writeln!(
-        file,
-        "-XX:ConcGCThreads={}",
-        (ctx.args.cpu_cores as f64 * 0.25).ceil() as i32
-    )?;
-
-    if ctx.safety.direct_mem_safety < 0.4 {
-        writeln!(
-            file,
-            "-Djdk.nio.maxCachedBufferSize=131072  # 降低缓存阈值至128KB"
-        )?;
-    } else {
-        writeln!(
-            file,
-            "-Djdk.nio.maxCachedBufferSize=262144  # 256KB缓存阈值"
-        )?;
-    }
-
-    if ctx.args.enable_memory_guard {
-        writeln!(file, "-Dapp.memory.guard.enabled=true")?;
-        writeln!(
-            file,
-            "-Dapp.memory.guard.direct.threshold={:.1}g",
-            ctx.direct_mem_gb * 0.85
-        )?;
-        writeln!(
-            file,
-            "-Dapp.memory.guard.heap.threshold={:.1}g",
-            ctx.heap_mem_gb * 0.8
-        )?;
-    }
-
-    // 元空间优化（针对高复杂度应用）
-    if ctx.args.complexity == "high" {
-        writeln!(file, "\n# 元空间优化（高复杂度应用）")?;
-        writeln!(file, "-XX:+UseCompressedClassPointers")?;
-        writeln!(
-            file,
-            "-XX:CompressedClassSpaceSize={}m",
-            (ctx.metaspace_size_mb as f32 * 0.4).max(256.0) as i32
-        )?;
-        writeln!(file, "-XX:+UnlockExperimentalVMOptions")?;
-        writeln!(file, "-XX:+UseZGC  # 可选：针对大堆内存使用ZGC")?;
-    }
-
-    // 监控配置
-    writeln!(file, "\n# 监控与诊断")?;
-    writeln!(file, "-XX:NativeMemoryTracking=detail")?;
-    writeln!(file, "-XX:+PrintGCDetails -XX:+PrintGCDateStamps")?;
-    writeln!(file, "-XX:+HeapDumpOnOutOfMemoryError")?;
-    writeln!(file, "-XX:HeapDumpPath=/var/log/jvm_dumps")?;
-
-    // 大文件优化
-    if ctx.args.avg_file_size > 50.0 {
-        writeln!(file, "\n# 大文件优化")?;
-        writeln!(file, "-Djdk.nio.enableFastFileTransfer=true")?;
-        writeln!(file, "-Dapp.file.maxChunkSize=2097152  # 2MB分块")?;
-        writeln!(file, "-Dapp.file.useDirectIO=true")?;
-    }
-    writeln!(file, "```\n")?;
 
     // 8. 性能分析
     writeln!(file, "## 性能分析")?;
@@ -328,8 +293,8 @@ pub fn generate_markdown_report(ctx: &ReportContext) -> anyhow::Result<()> {
         let ram_needed = (ctx.args.total_ram * scale_factor).ceil() as i32;
 
         writeln!(file, "\n- **当前配置**:")?;
-        writeln!(file, "  - 当前配置理论最大连接数: {}", max_conn)?;
-        writeln!(file, "  - 目标连接数: {}", target_conn)?;
+        writeln!(file, "  - 当前配置理论最大连接数: {max_conn}")?;
+        writeln!(file, "  - 目标连接数: {target_conn}")?;
         writeln!(
             file,
             "  - 稳定运行预期: {}",
@@ -382,7 +347,7 @@ pub fn generate_markdown_report(ctx: &ReportContext) -> anyhow::Result<()> {
     } else {
         writeln!(file, "## 容量评估")?;
         writeln!(file, "- 当前配置满足目标连接数要求")?;
-        writeln!(file, "- 理论最大连接数: {}", max_conn)?;
+        writeln!(file, "- 理论最大连接数: {max_conn}")?;
         writeln!(
             file,
             "- 稳定运行预期: {}",
